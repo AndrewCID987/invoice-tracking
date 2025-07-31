@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Automated Invoice Processor</title>
+    <title>Smart Invoice Processor</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         * {
@@ -27,6 +27,27 @@
         h1 {
             color: #1a73e8;
             margin-bottom: 20px;
+        }
+        
+        .setup-section {
+            background-color: #e7f3ff;
+            border: 1px solid #b3d7ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        
+        .setup-section.connected {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+        }
+        
+        .url-input {
+            width: 70%;
+            padding: 8px;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
         }
         
         .upload-section {
@@ -140,6 +161,11 @@
             border-color: #4CAF50;
         }
         
+        .smart-extracted {
+            background-color: #fff3cd;
+            border-color: #ffc107;
+        }
+        
         textarea {
             resize: vertical;
             height: 60px;
@@ -193,45 +219,22 @@
             color: #721c24;
         }
         
-        .setup-section {
-            background-color: #fff3cd;
-            border: 1px solid #ffeaa7;
-            padding: 15px;
+        .extraction-preview {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
             border-radius: 4px;
-            margin-bottom: 20px;
-        }
-        
-        .recent-invoices {
-            margin-top: 30px;
-        }
-        
-        .invoice-card {
-            background: white;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 15px;
             margin: 10px 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        
-        .invoice-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        
-        .invoice-amount {
-            font-size: 18px;
-            font-weight: bold;
-            color: #1a73e8;
+            font-size: 12px;
         }
         
         .confidence-indicator {
+            display: inline-block;
             padding: 2px 8px;
             border-radius: 12px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: bold;
+            margin-left: 10px;
         }
         
         .confidence-high {
@@ -252,18 +255,19 @@
 </head>
 <body>
     <div class="container">
-        <h1>🤖 Automated Invoice Processor</h1>
+        <h1>🤖 Smart Invoice Processor</h1>
         
-        <div class="setup-section">
-            <h3>⚙️ Setup Google Sheets Connection</h3>
-            <input type="text" id="webAppUrl" placeholder="https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec" style="width: 70%; margin-right: 10px;">
-            <button onclick="saveWebAppUrl()">Save Connection</button>
-            <button onclick="testConnection()">🔍 Test Connection</button>
+        <div class="setup-section" id="setupSection">
+            <h3>⚙️ Google Sheets Connection</h3>
+            <p>Enter your Google Apps Script Web App URL to automatically save invoices:</p>
+            <input type="text" id="webAppUrl" class="url-input" placeholder="https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec">
+            <button onclick="saveAndTestConnection()">💾 Connect & Test</button>
+            <div id="connectionStatus" style="margin-top: 10px; font-weight: bold;"></div>
         </div>
         
         <div class="upload-section">
             <h2>📄 Upload Invoice Document</h2>
-            <p>Drop your invoice PDF here or click to browse. Our AI will automatically extract all the key information!</p>
+            <p>Drop your invoice PDF here. Our smart AI will extract clean, concise line items and save directly to Google Sheets!</p>
             
             <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
                 <div class="upload-icon">📁</div>
@@ -283,13 +287,14 @@
         <div id="statusMessage" class="status-message"></div>
         
         <div id="extractedData" class="extracted-data">
-            <h3>📋 Extracted Invoice Data</h3>
-            <p>Review and edit the automatically extracted information before saving:</p>
+            <h3>📋 Smart-Extracted Invoice Data</h3>
+            <p>AI has extracted concise line items and key data. Review before saving to Google Sheets:</p>
             
             <div class="form-row">
                 <div class="form-group">
-                    <label for="extractedLineItem">Line Item Description:</label>
-                    <input type="text" id="extractedLineItem" class="auto-filled">
+                    <label for="extractedLineItem">Line Item (Smart-Extracted):</label>
+                    <input type="text" id="extractedLineItem" class="smart-extracted">
+                    <small id="lineItemConfidence" style="color: #666; margin-top: 4px;"></small>
                 </div>
                 <div class="form-group">
                     <label for="extractedInvoiceTotal">Invoice Total ($):</label>
@@ -346,27 +351,28 @@
                 </div>
             </div>
             
-            <button onclick="saveExtractedInvoice()" class="success-button" id="saveExtractedBtn">💾 Save to Google Sheets</button>
+            <div class="extraction-preview" id="extractionPreview">
+                <strong>Extraction Details:</strong>
+                <div id="extractionDetails"></div>
+            </div>
+            
+            <button onclick="saveToGoogleSheets()" class="success-button" id="saveExtractedBtn">🚀 Save to Google Sheets</button>
             <button onclick="resetForm()">🔄 Process Another Invoice</button>
-        </div>
-        
-        <div class="recent-invoices" id="recentInvoices" style="display: none;">
-            <h3>📊 Recently Processed Invoices</h3>
-            <div id="invoiceCards"></div>
         </div>
     </div>
 
     <script>
         let webAppUrl = localStorage.getItem('webAppUrl') || '';
-        let extractedText = '';
-        let recentInvoices = JSON.parse(localStorage.getItem('recentInvoices')) || [];
+        let isConnected = false;
         
         // Set PDF.js worker
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         
         // Initialize
         document.getElementById('webAppUrl').value = webAppUrl;
-        displayRecentInvoices();
+        if (webAppUrl) {
+            testConnection();
+        }
         
         // Drag and drop functionality
         const uploadArea = document.getElementById('uploadArea');
@@ -420,6 +426,51 @@
             }
         }
         
+        async function saveAndTestConnection() {
+            const url = document.getElementById('webAppUrl').value.trim();
+            if (!url) {
+                showStatus('Please enter your Google Apps Script Web App URL', 'error');
+                return;
+            }
+            
+            localStorage.setItem('webAppUrl', url);
+            webAppUrl = url;
+            
+            await testConnection();
+        }
+        
+        async function testConnection() {
+            if (!webAppUrl) return;
+            
+            const statusDiv = document.getElementById('connectionStatus');
+            statusDiv.textContent = '🔄 Testing connection...';
+            statusDiv.style.color = '#856404';
+            
+            try {
+                const response = await fetch(webAppUrl, {
+                    method: 'GET',
+                    mode: 'cors'
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    isConnected = true;
+                    statusDiv.textContent = `✅ Connected to: ${result.sheetName || 'Google Sheets'}`;
+                    statusDiv.style.color = '#155724';
+                    document.getElementById('setupSection').classList.add('connected');
+                    showStatus('Google Sheets connection successful!', 'success');
+                } else {
+                    throw new Error(result.error || 'Connection failed');
+                }
+            } catch (error) {
+                isConnected = false;
+                statusDiv.textContent = '❌ Connection failed - Check your Web App URL';
+                statusDiv.style.color = '#721c24';
+                showStatus('Connection failed: ' + error.message, 'error');
+            }
+        }
+        
         async function processInvoicePDF(file) {
             showProcessingStatus('Extracting text from PDF...');
             
@@ -437,88 +488,199 @@
                     fullText += pageText + ' ';
                 }
                 
-                extractedText = fullText;
-                showProcessingStatus('Analyzing invoice data...');
+                showProcessingStatus('Smart-analyzing invoice data...');
                 
-                // Extract invoice data
-                const invoiceData = extractInvoiceData(fullText);
+                // Extract invoice data with improved line item detection
+                const invoiceData = smartExtractInvoiceData(fullText);
                 
                 // Populate form
                 populateExtractedForm(invoiceData);
                 
                 hideProcessingStatus();
                 showExtractedData();
-                showStatus('Invoice processed successfully! Review the extracted data below.', 'success');
+                showStatus('✅ Invoice processed! Smart line item extracted. Review before saving.', 'success');
                 
             } catch (error) {
                 hideProcessingStatus();
-                showStatus('Error processing PDF: ' + error.message, 'error');
+                showStatus('❌ Error processing PDF: ' + error.message, 'error');
             }
         }
         
-        function extractInvoiceData(text) {
+        function smartExtractInvoiceData(text) {
             const data = {
                 lineItem: '',
                 invoiceTotal: 0,
                 vendor: '',
                 invoiceDate: '',
                 invoiceNumber: '',
-                notes: ''
+                notes: '',
+                confidence: 'low',
+                extractionDetails: []
             };
             
             // Extract invoice total (look for dollar amounts)
             const amountRegex = /\$[\d,]+\.?\d*/g;
             const amounts = text.match(amountRegex);
             if (amounts) {
-                // Find the largest amount (likely the total)
                 const numericAmounts = amounts.map(amt => parseFloat(amt.replace(/[$,]/g, '')));
                 data.invoiceTotal = Math.max(...numericAmounts);
+                data.extractionDetails.push(`Found total: $${data.invoiceTotal}`);
             }
             
-            // Extract invoice number
-            const invoiceNumRegex = /(?:invoice|inv|#)\s*:?\s*(\d+)/i;
-            const invoiceNumMatch = text.match(invoiceNumRegex);
-            if (invoiceNumMatch) {
-                data.invoiceNumber = invoiceNumMatch[1];
+            // Extract invoice number - improved patterns
+            const invoicePatterns = [
+                /(?:invoice|inv)\s*#?\s*:?\s*(\d+)/i,
+                /(?:invoice|inv)\s*(?:number|no|#)\s*:?\s*(\d+)/i,
+                /#(\d{6,})/,
+                /(\d{7,})/
+            ];
+            
+            for (const pattern of invoicePatterns) {
+                const match = text.match(pattern);
+                if (match) {
+                    data.invoiceNumber = match[1];
+                    data.extractionDetails.push(`Invoice #: ${data.invoiceNumber}`);
+                    break;
+                }
             }
             
-            // Extract dates
-            const dateRegex = /(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/g;
-            const dates = text.match(dateRegex);
-            if (dates && dates.length > 0) {
-                data.invoiceDate = convertToDateInput(dates[0]);
+            // Extract dates - multiple formats
+            const datePatterns = [
+                /(\d{1,2}\/\d{1,2}\/\d{4})/g,
+                /(\d{4}-\d{2}-\d{2})/g,
+                /(\w+\s+\d{1,2},\s+\d{4})/g
+            ];
+            
+            for (const pattern of datePatterns) {
+                const dates = text.match(pattern);
+                if (dates && dates.length > 0) {
+                    data.invoiceDate = convertToDateInput(dates[0]);
+                    data.extractionDetails.push(`Date: ${dates[0]}`);
+                    break;
+                }
             }
             
-            // Extract vendor (look for company names - usually at top)
-            const lines = text.split('\n').filter(line => line.trim().length > 0);
-            for (let i = 0; i < Math.min(10, lines.length); i++) {
+            // Smart vendor extraction - look for company patterns
+            const lines = text.split(/[\n\r]+/).filter(line => line.trim().length > 0);
+            const vendorCandidates = [];
+            
+            for (let i = 0; i < Math.min(15, lines.length); i++) {
                 const line = lines[i].trim();
-                if (line.length > 3 && line.length < 50 && 
-                    /^[A-Z]/.test(line) && 
-                    !/^\d/.test(line) &&
-                    !line.toLowerCase().includes('invoice') &&
-                    !line.toLowerCase().includes('date')) {
-                    data.vendor = line;
-                    break;
+                
+                // Skip common non-vendor lines
+                if (line.match(/^(invoice|bill|date|to:|from:|total|amount|due|page)/i)) continue;
+                if (line.length < 3 || line.length > 50) continue;
+                if (/^\d+$/.test(line)) continue; // Skip pure numbers
+                if (line.includes('$')) continue; // Skip lines with amounts
+                
+                // Look for company indicators
+                if (line.match(/(inc|llc|corp|company|ltd|enterprises|group|solutions)/i)) {
+                    vendorCandidates.push({line, score: 10, reason: 'Company suffix'});
+                } else if (line.match(/^[A-Z][a-z]+(\s+[A-Z][a-z]*)*$/)) {
+                    vendorCandidates.push({line, score: 5, reason: 'Proper case'});
+                } else if (line.match(/^[A-Z\s&]+$/)) {
+                    vendorCandidates.push({line, score: 3, reason: 'All caps'});
                 }
             }
             
-            // Extract line item description (look for product/service descriptions)
-            const serviceKeywords = ['service', 'product', 'work', 'design', 'print', 'prepress', 'processing'];
-            for (const line of lines) {
-                if (serviceKeywords.some(keyword => line.toLowerCase().includes(keyword)) && line.length > 10) {
-                    data.lineItem = line.trim();
-                    break;
-                }
+            if (vendorCandidates.length > 0) {
+                vendorCandidates.sort((a, b) => b.score - a.score);
+                data.vendor = vendorCandidates[0].line;
+                data.extractionDetails.push(`Vendor: ${data.vendor} (${vendorCandidates[0].reason})`);
             }
             
-            // If no line item found, use vendor + "services"
+            // IMPROVED Line Item Extraction - Focus on short, relevant descriptions
+            const lineItemCandidates = [];
+            
+            // Strategy 1: Look for items near dollar amounts
+            const amountLines = [];
+            lines.forEach((line, index) => {
+                if (line.includes('$') && data.invoiceTotal > 0) {
+                    const lineAmount = parseFloat(line.match(/\$?([\d,]+\.?\d*)/)?.[1]?.replace(/,/g, '') || '0');
+                    if (Math.abs(lineAmount - data.invoiceTotal) < 1) {
+                        // This line contains the total amount, look for description nearby
+                        for (let j = Math.max(0, index - 2); j < Math.min(lines.length, index + 2); j++) {
+                            if (j !== index && lines[j].length > 3 && lines[j].length < 50 && !lines[j].includes('$')) {
+                                amountLines.push({
+                                    text: lines[j].trim(),
+                                    score: 10,
+                                    reason: 'Near total amount'
+                                });
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Strategy 2: Look for service/product keywords but keep it short
+            const servicePatterns = [
+                /([A-Z][a-z]*\s+(?:Service|Work|Design|Print|Processing|Development|Consulting|Setup|Installation))/gi,
+                /([A-Z][a-z]*\s+(?:Services|Works|Designs|Prints|Processing|Development|Consulting|Setup|Installation))/gi,
+                /(Prepress|Printing|Design|Consulting|Development|Setup|Installation|Processing)(?:\s+[A-Z][a-z]*)?/gi,
+                /([A-Z][a-z]*\s+(?:Fee|Charge|Cost))/gi
+            ];
+            
+            servicePatterns.forEach(pattern => {
+                const matches = text.match(pattern);
+                if (matches) {
+                    matches.forEach(match => {
+                        if (match.length < 40) { // Keep it short
+                            lineItemCandidates.push({
+                                text: match.trim(),
+                                score: 8,
+                                reason: 'Service keyword'
+                            });
+                        }
+                    });
+                }
+            });
+            
+            // Strategy 3: Look for short descriptive phrases
+            lines.forEach(line => {
+                const cleaned = line.trim();
+                if (cleaned.length > 8 && cleaned.length < 35 && 
+                    !cleaned.includes('$') && 
+                    !cleaned.match(/^\d+$/) &&
+                    !cleaned.match(/^(invoice|bill|date|total|amount|due|page|from|to)/i) &&
+                    cleaned.match(/^[A-Z]/)) {
+                    
+                    // Bonus points for certain words
+                    let score = 3;
+                    if (cleaned.match(/(work|service|design|print|develop|consult|setup|process|creative|project)/i)) {
+                        score += 3;
+                    }
+                    
+                    lineItemCandidates.push({
+                        text: cleaned,
+                        score: score,
+                        reason: 'Short description'
+                    });
+                }
+            });
+            
+            // Combine all candidates
+            const allCandidates = [...amountLines, ...lineItemCandidates];
+            
+            if (allCandidates.length > 0) {
+                // Remove duplicates and sort by score
+                const uniqueCandidates = allCandidates.filter((candidate, index, self) => 
+                    index === self.findIndex(c => c.text === candidate.text)
+                );
+                uniqueCandidates.sort((a, b) => b.score - a.score);
+                
+                data.lineItem = uniqueCandidates[0].text;
+                data.confidence = uniqueCandidates[0].score >= 8 ? 'high' : uniqueCandidates[0].score >= 5 ? 'medium' : 'low';
+                data.extractionDetails.push(`Line item: "${data.lineItem}" (${uniqueCandidates[0].reason}, score: ${uniqueCandidates[0].score})`);
+            }
+            
+            // Fallback: Create from vendor if nothing found
             if (!data.lineItem && data.vendor) {
-                data.lineItem = `${data.vendor} - Services`;
+                data.lineItem = `${data.vendor.split(' ')[0]} Services`;
+                data.confidence = 'low';
+                data.extractionDetails.push(`Line item: Fallback from vendor name`);
             }
             
-            // Add relevant text as notes
-            data.notes = `Processed from: ${data.vendor || 'Unknown vendor'} - Auto-extracted data`;
+            data.notes = `Auto-processed ${new Date().toLocaleDateString()}`;
             
             return data;
         }
@@ -540,6 +702,15 @@
             document.getElementById('extractedInvoiceNumber').value = data.invoiceNumber || '';
             document.getElementById('extractedNotes').value = data.notes || '';
             
+            // Show confidence indicator
+            const confidenceEl = document.getElementById('lineItemConfidence');
+            confidenceEl.textContent = `Confidence: ${data.confidence}`;
+            confidenceEl.className = `confidence-${data.confidence}`;
+            
+            // Show extraction details
+            const detailsEl = document.getElementById('extractionDetails');
+            detailsEl.innerHTML = data.extractionDetails.map(detail => `• ${detail}`).join('<br>');
+            
             calculateExtractedSplits();
         }
         
@@ -557,9 +728,9 @@
             document.getElementById('extractedVariance').value = variance;
         }
         
-        async function saveExtractedInvoice() {
-            if (!webAppUrl) {
-                showStatus('Please set your Google Apps Script Web App URL first!', 'error');
+        async function saveToGoogleSheets() {
+            if (!isConnected) {
+                showStatus('❌ Not connected to Google Sheets. Please test your connection first.', 'error');
                 return;
             }
             
@@ -580,149 +751,33 @@
             
             const btn = document.getElementById('saveExtractedBtn');
             btn.disabled = true;
-            btn.textContent = '💾 Saving...';
+            btn.textContent = '🚀 Saving to Google Sheets...';
             
             try {
-                // Test connection first
-                showStatus('Testing connection to Google Sheets...', 'success');
-                
-                const testResponse = await fetch(webAppUrl + '?test=1', {
-                    method: 'GET',
-                    mode: 'cors',
-                    cache: 'no-cache'
-                });
-                
-                if (!testResponse.ok) {
-                    throw new Error(`Connection test failed: ${testResponse.status} ${testResponse.statusText}`);
-                }
-                
-                const testResult = await testResponse.json();
-                console.log('Connection test result:', testResult);
-                
-                // Now send the actual data
-                showStatus('Saving invoice data...', 'success');
-                
                 const response = await fetch(webAppUrl, {
                     method: 'POST',
                     mode: 'cors',
-                    cache: 'no-cache',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify(invoiceData)
                 });
                 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
-                }
-                
                 const result = await response.json();
-                console.log('Save result:', result);
                 
                 if (result.success) {
-                    showStatus('✅ Invoice saved to Google Sheets successfully!', 'success');
-                    addToRecentInvoices(invoiceData);
+                    showStatus(`✅ Invoice saved to Google Sheets! Row ${result.rowNumber || 'added'}.`, 'success');
                     resetForm();
                 } else {
-                    throw new Error(result.error || 'Unknown error from Google Sheets');
+                    throw new Error(result.error || 'Unknown error');
                 }
                 
             } catch (error) {
-                console.error('Detailed error:', error);
-                
-                // Provide specific error messages
-                let errorMessage = 'Error saving to Google Sheets: ';
-                
-                if (error.message.includes('Failed to fetch')) {
-                    errorMessage += 'Connection blocked. This might be a CORS issue or your Web App URL is incorrect. Try:\n';
-                    errorMessage += '1. Test your Web App URL directly in a browser\n';
-                    errorMessage += '2. Redeploy your Google Apps Script\n';
-                    errorMessage += '3. Make sure "Who has access" is set to "Anyone"';
-                } else if (error.message.includes('404')) {
-                    errorMessage += 'Web App not found. Please check your Web App URL.';
-                } else if (error.message.includes('403')) {
-                    errorMessage += 'Access denied. Make sure your Web App is deployed with "Anyone" access.';
-                } else {
-                    errorMessage += error.message;
-                }
-                
-                showStatus(errorMessage, 'error');
-                
-                // Offer manual backup
-                showManualBackupOption(invoiceData);
+                showStatus('❌ Error saving to Google Sheets: ' + error.message, 'error');
             }
             
             btn.disabled = false;
-            btn.textContent = '💾 Save to Google Sheets';
-        }
-        
-        function showManualBackupOption(data) {
-            const backupDiv = document.createElement('div');
-            backupDiv.style.cssText = `
-                background: #fff3cd;
-                border: 1px solid #ffeaa7;
-                padding: 15px;
-                border-radius: 4px;
-                margin: 15px 0;
-            `;
-            
-            const csvData = `"${data.lineItem}","${data.originalBudget}","${data.forecasted}","${data.invoiceTotal}","${data.variance}","${data.gl}","${data.split69121}","${data.split60113}","${data.vendor}","${data.invoiceDate}","${data.invoiceNumber}","${data.notes}"`;
-            
-            backupDiv.innerHTML = `
-                <h4>📋 Manual Backup Option</h4>
-                <p>Copy this data and paste it into your Google Sheet manually:</p>
-                <textarea readonly style="width: 100%; height: 60px; font-family: monospace;">${csvData}</textarea>
-                <button onclick="navigator.clipboard.writeText('${csvData.replace(/'/g, "\\'")}').then(() => alert('Copied to clipboard!'))" style="margin-top: 10px;">📋 Copy to Clipboard</button>
-            `;
-            
-            document.getElementById('extractedData').appendChild(backupDiv);
-        }
-        
-        function addToRecentInvoices(invoice) {
-            invoice.processedAt = new Date().toISOString();
-            recentInvoices.unshift(invoice);
-            recentInvoices = recentInvoices.slice(0, 5); // Keep only last 5
-            localStorage.setItem('recentInvoices', JSON.stringify(recentInvoices));
-            displayRecentInvoices();
-        }
-        
-        function displayRecentInvoices() {
-            if (recentInvoices.length === 0) return;
-            
-            const container = document.getElementById('recentInvoices');
-            const cardsContainer = document.getElementById('invoiceCards');
-            
-            cardsContainer.innerHTML = '';
-            
-            recentInvoices.forEach(invoice => {
-                const card = document.createElement('div');
-                card.className = 'invoice-card';
-                card.innerHTML = `
-                    <div class="invoice-header">
-                        <div>
-                            <strong>${invoice.vendor}</strong> - ${invoice.lineItem}
-                        </div>
-                        <div class="invoice-amount">$${invoice.invoiceTotal.toFixed(2)}</div>
-                    </div>
-                    <div>
-                        <small>Invoice #${invoice.invoiceNumber} | ${new Date(invoice.invoiceDate).toLocaleDateString()}</small>
-                    </div>
-                `;
-                cardsContainer.appendChild(card);
-            });
-            
-            container.style.display = 'block';
-        }
-        
-        function saveWebAppUrl() {
-            const url = document.getElementById('webAppUrl').value.trim();
-            if (url) {
-                localStorage.setItem('webAppUrl', url);
-                webAppUrl = url;
-                showStatus('Google Sheets connection saved!', 'success');
-            } else {
-                showStatus('Please enter a valid Web App URL', 'error');
-            }
+            btn.textContent = '🚀 Save to Google Sheets';
         }
         
         function showProcessingStatus(text) {
@@ -740,13 +795,13 @@
         
         function showStatus(message, type) {
             const statusDiv = document.getElementById('statusMessage');
-            statusDiv.textContent = message;
+            statusDiv.innerHTML = message.replace(/\n/g, '<br>');
             statusDiv.className = `status-message status-${type}`;
             statusDiv.style.display = 'block';
             
             setTimeout(() => {
                 statusDiv.style.display = 'none';
-            }, 5000);
+            }, 8000);
         }
         
         function resetForm() {
@@ -761,6 +816,8 @@
             });
             
             document.getElementById('extractedGL').value = '65100';
+            document.getElementById('lineItemConfidence').textContent = '';
+            document.getElementById('extractionDetails').innerHTML = '';
         }
     </script>
 </body>
